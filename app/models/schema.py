@@ -58,9 +58,9 @@ class ImageMotion(str, Enum):
     zoom = "zoom"
 
 
-SubtitleDisplayMode = Literal["sentence", "word_by_word"]
+SubtitleDisplayMode = Literal["sentence", "word_by_word", "karaoke"]
 SubtitleAnimation = Literal["none", "pop_spring"]
-_SUBTITLE_DISPLAY_MODES = ("sentence", "word_by_word")
+_SUBTITLE_DISPLAY_MODES = ("sentence", "word_by_word", "karaoke")
 _SUBTITLE_ANIMATIONS = ("none", "pop_spring")
 
 

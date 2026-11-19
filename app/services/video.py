@@ -1632,6 +1632,75 @@ def subtitle_font_supports_text(font_path: str, text: str) -> bool:
     return _subtitle_font_supports_sample(font_path, sample)
 
 
+def speech_gain_envelope(cues, boost: float = 2.5, ramp: float = 0.3):
+    """Return gain(t) for background music: 1.0 under speech, `boost` in pauses.
+
+    The configured bgm_volume is the level under narration; music swells in
+    the intro, outro and pauses longer than ~0.6s, with linear ramps.
+    """
+    spans = sorted((float(a), float(b)) for (a, b), _ in cues)
+    merged: list[list[float]] = []
+    for a, b in spans:
+        if merged and a - merged[-1][1] < 0.6:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    starts = np.array([m[0] for m in merged])
+    ends = np.array([m[1] for m in merged])
+
+    def gain(t):
+        t = np.atleast_1d(np.asarray(t, dtype=float))
+        # distance outside the nearest speech span (0 inside a span)
+        before = starts[None, :] - t[:, None]
+        after = t[:, None] - ends[None, :]
+        dist = np.maximum(np.maximum(before, after), 0).min(axis=1)
+        return 1.0 + (boost - 1.0) * np.clip(dist / ramp, 0.0, 1.0)
+
+    return gain
+
+
+def _duck_under_speech(bgm_clip, cues):
+    if not cues:
+        return bgm_clip
+    gain = speech_gain_envelope(cues)
+
+    def transform(get_frame, t):
+        frame = get_frame(t)
+        g = gain(t)
+        return frame * (g[:, None] if np.ndim(frame) == 2 else g[0])
+
+    return bgm_clip.transform(transform, keep_duration=True)
+
+
+_KARAOKE_POSITIONS = {"top": 0.18, "center": 0.5, "bottom": 0.78}
+
+
+def _build_karaoke_clips(cues, params, font_path, video_width, video_height, duration):
+    from app.services import karaoke
+
+    font_size = int(params.font_size)
+    position = params.subtitle_position
+    if position == "custom":
+        y_ratio = max(0.08, min(0.92, float(params.custom_position) / 100))
+    elif position in ("two_thirds_bottom", "two_thirds", "2/3_bottom"):
+        y_ratio = 1 / 3
+    else:
+        y_ratio = _KARAOKE_POSITIONS.get(position, 0.68)
+    style = karaoke.Style(
+        font_path=font_path,
+        font_size=font_size,
+        color=params.text_fore_color or "#FFFFFF",
+        highlight_color=getattr(params, "subtitle_highlight_color", None) or "#FFE600",
+        stroke_color=params.stroke_color or "#000000",
+        # Short-form captions need a heavy outline to stay readable on any footage.
+        stroke_width=max(int(params.stroke_width), font_size // 12),
+        max_width=int(video_width * 0.88),
+    )
+    return karaoke.build_clips(
+        cues, style, video_width, video_height, y_ratio=y_ratio, total_duration=duration
+    )
+
+
 def generate_video(
     video_path: str,
     audio_path: str,
@@ -1914,8 +1983,12 @@ def generate_video(
                 font_size=params.font_size,
             )
 
-        if params.subtitle_enabled and subtitle_path and os.path.exists(subtitle_path):
-            subtitles = moviepy_subtitles(subtitle_path)
+        subtitles = (
+            moviepy_subtitles(subtitle_path)
+            if params.subtitle_enabled and subtitle_path and os.path.exists(subtitle_path)
+            else []
+        )
+        if subtitles:
             shaped_font = subtitle_shaping.video_font(
                 font_path, (text for _, text in subtitles)
             )
@@ -1927,14 +2000,23 @@ def generate_video(
                 )
             )
             text_clips = []
-            for item in sub.subtitles:
-                clip = create_text_clip(subtitle_item=item)
-                text_clips.append(clip)
-            # bg_color makes the composite opaque. Without it MoviePy starts every
-            # frame from a transparent canvas and also builds a full-size mask
-            # composite, which the writer pipes to FFmpeg as an alpha channel
-            # that H.264 drops. The video covers the whole canvas, so the
-            # rendered frames are the same.
+            use_karaoke = getattr(
+                params, "subtitle_display_mode", "sentence"
+            ) == "karaoke" and not any(
+                subtitle_shaping.needs_shaping(text) for _, text in sub.subtitles
+            ) and subtitle_font_supports_text(
+                font_path, "".join(text for _, text in sub.subtitles)
+            )
+            if use_karaoke:
+                text_clips = _build_karaoke_clips(
+                    sub.subtitles, params, font_path, video_width, video_height,
+                    video_clip.duration,
+                )
+            else:
+                for item in sub.subtitles:
+                    clip = create_text_clip(subtitle_item=item)
+                    text_clips.append(clip)
+            # bg_color makes the composite opaque so no alpha mask is piped to FFmpeg.
             video_clip = CompositeVideoClip(
                 [video_clip, *text_clips], bg_color=(0, 0, 0)
             )
@@ -1976,6 +2058,8 @@ def generate_video(
                 bgm_effects.append(afx.AudioFadeOut(3))
                 bgm_source_clip = clip_stack.enter_context(AudioFileClip(bgm_file))
                 bgm_clip = bgm_source_clip.with_effects(bgm_effects)
+                if subtitles:
+                    bgm_clip = _duck_under_speech(bgm_clip, subtitles)
                 audio_clip = CompositeAudioClip([audio_clip, bgm_clip])
             except Exception:
                 bgm_mix_succeeded = False
@@ -2005,7 +2089,34 @@ def generate_video(
                 logger=None,
                 fps=fps,
             )
+        normalize_loudness(output_file)
         return bgm_mix_succeeded
+
+
+def normalize_loudness(video_file: str, target_lufs: float = -14.0) -> bool:
+    """Normalise the audio track to streaming loudness (YouTube: -14 LUFS).
+
+    YouTube turns loud uploads down but never turns quiet ones up, so a quiet
+    mix simply sounds weak. The video stream is copied, not re-encoded.
+    Failure keeps the original file.
+    """
+    root, ext = os.path.splitext(video_file)
+    tmp = f"{root}.loudnorm{ext}"
+    command = [
+        get_ffmpeg_binary(), "-y", "-v", "error", "-i", video_file,
+        "-c:v", "copy", "-af", f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11",
+        "-c:a", audio_codec, "-b:a", audio_bitrate, "-ar", "44100",
+        "-movflags", "+faststart", tmp,
+    ]
+    try:
+        subprocess.run(command, check=True, capture_output=True, timeout=600)
+        os.replace(tmp, video_file)
+        return True
+    except Exception as exc:
+        logger.warning(f"loudness normalisation skipped: {exc}")
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        return False
 
 
 # 放大模式的渲染方式已改为亚像素插值，输出像素与旧版本不同。文件名带上这个

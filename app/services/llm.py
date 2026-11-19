@@ -58,6 +58,18 @@ DEFAULT_SCRIPT_SYSTEM_PROMPT = """
 
 ## Goals:
 Generate a script for a video, depending on the subject of the video.
+The video is a short-form vertical video (YouTube Shorts / TikTok) that must
+hold attention from the first second to the last.
+
+## Retention rules:
+- open with a scroll-stopping hook in the first sentence (a surprising fact, a bold claim, or a question the viewer needs answered); never open with a greeting or a summary.
+- every sentence must add a new concrete fact, number, name or image; no filler, no generic adjectives.
+- write for the ear: short sentences (mostly under 14 words), plain words, second person ("you") where natural.
+- build curiosity: tease what comes next ("but the strangest one is last") and pay it off.
+- describe things that can be shown on screen, so stock footage can match each sentence.
+- aim for about 110 to 150 spoken words unless the user asks otherwise.
+- end with a punchy payoff or a question that invites a comment; no "like and subscribe".
+- only state facts you are confident are true.
 
 ## Constrains:
 1. the script is to be returned as a string with the specified number of paragraphs.
@@ -1068,7 +1080,12 @@ def generate_terms(
         )
         ordering_rule = (
             "6. keep the terms in the same order as the script narration; "
-            "earlier terms must describe earlier visual moments."
+            "earlier terms must describe earlier visual moments.\n"
+            "7. each term is a literal, filmable shot for that moment of narration "
+            "(concrete nouns a stock footage library would have, e.g. "
+            "\"anglerfish glowing lure\", \"mars planet surface\"); the term must "
+            "show the main subject doing or near the specific thing being said, and do not repeat "
+            "the same term twice in a row."
         )
         # 有序关键词模式下，示例数量要和 amount 保持一致，避免模型被固定
         # 的 4 个示例误导，导致长文案只返回少量关键词，影响素材覆盖度。
@@ -1097,7 +1114,7 @@ def generate_terms(
 
 ## Constrains:
 1. the search terms are to be returned as a json-array of strings.
-2. each search term should consist of 1-3 words, always add the main subject of the video.
+2. each search term should consist of 1-4 words and always include the main subject of the video, unless that sentence is clearly about something else (e.g. "octopus opening jar", not "opening jar").
 3. you must only return the json-array of strings. you must not return anything else. you must not return the script.
 4. the search terms must be related to the subject of the video.
 5. reply with english search terms only.

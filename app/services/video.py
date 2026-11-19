@@ -2057,7 +2057,34 @@ def generate_video(
                 logger=None,
                 fps=fps,
             )
+        normalize_loudness(output_file)
         return bgm_mix_succeeded
+
+
+def normalize_loudness(video_file: str, target_lufs: float = -14.0) -> bool:
+    """Normalise the audio track to streaming loudness (YouTube: -14 LUFS).
+
+    YouTube turns loud uploads down but never turns quiet ones up, so a quiet
+    mix simply sounds weak. The video stream is copied, not re-encoded.
+    Failure keeps the original file.
+    """
+    root, ext = os.path.splitext(video_file)
+    tmp = f"{root}.loudnorm{ext}"
+    command = [
+        get_ffmpeg_binary(), "-y", "-v", "error", "-i", video_file,
+        "-c:v", "copy", "-af", f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11",
+        "-c:a", audio_codec, "-b:a", audio_bitrate, "-ar", "44100",
+        "-movflags", "+faststart", tmp,
+    ]
+    try:
+        subprocess.run(command, check=True, capture_output=True, timeout=600)
+        os.replace(tmp, video_file)
+        return True
+    except Exception as exc:
+        logger.warning(f"loudness normalisation skipped: {exc}")
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        return False
 
 
 # 放大模式的渲染方式已改为亚像素插值，输出像素与旧版本不同。文件名带上这个

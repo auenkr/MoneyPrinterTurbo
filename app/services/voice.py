@@ -3776,6 +3776,34 @@ def _join_lines_split_inside_words(
     return joined_lines
 
 
+_TRAILING_PUNCT = re.compile(r"""^[\"'\u2019\u201d)\]]*[.,!?;:\u2026\u3002\uff01\uff1f\uff0c\uff1b\uff1a]+""")
+
+
+def _restore_word_punctuation(sub_items: list[str], script: str) -> list[str]:
+    """Copy sentence/clause punctuation from the script onto word-level cues.
+
+    Edge TTS word boundaries carry no punctuation, which caption phrasing
+    needs to break at sentence ends. Words are located in the script in order;
+    a word that cannot be found is left unchanged.
+    """
+    lowered = script.lower()
+    cursor = 0
+    restored = []
+    for item in sub_items:
+        lines = item.rstrip("\n").split("\n")
+        word = lines[-1].strip() if lines else ""
+        pos = lowered.find(word.lower(), cursor) if word else -1
+        if pos >= 0 and pos - cursor < 80:
+            end = pos + len(word)
+            cursor = end
+            match = _TRAILING_PUNCT.match(script[end:end + 6])
+            if match and not word.endswith(match.group(0)):
+                punct = match.group(0).lstrip("\"'\u2019\u201d)]")
+                lines[-1] = lines[-1].rstrip() + punct
+        restored.append("\n".join(lines) + ("\n" if item.endswith("\n") else ""))
+    return restored
+
+
 def create_subtitle(
     sub_maker: SubMaker,
     text: str,
@@ -3797,6 +3825,7 @@ def create_subtitle(
             else:
                 sub_items = _build_subtitle_items_from_legacy_submaker_words(sub_maker)
             if sub_items:
+                sub_items = _restore_word_punctuation(sub_items, text)
                 _write_subtitle_items(sub_items, subtitle_file)
                 return
 

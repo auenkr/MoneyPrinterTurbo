@@ -5,6 +5,7 @@ import io
 import math
 import os
 import random
+import re
 import tempfile
 import threading
 import time
@@ -410,6 +411,42 @@ def _filter_materials_by_aspect(
     return filtered_items
 
 
+def _stem(word: str) -> str:
+    word = word.lower()
+    for suffix in ("ies", "es", "s", "ing", "ed"):
+        if len(word) > len(suffix) + 2 and word.endswith(suffix):
+            return word[: -len(suffix)]
+    return word
+
+
+def rank_by_slug_relevance(items: List[MaterialInfo], search_term: str) -> List[MaterialInfo]:
+    """Order stock results by how many query words their page slug mentions.
+
+    Pexels search is loose ("octopus solving puzzle" returns children doing
+    puzzles). The public page URL slug describes the clip, so results that
+    mention the subject (first word of the term) are kept first; when at least
+    one does, results without it are dropped.
+    """
+    terms = [_stem(w) for w in re.findall(r"[a-zA-Z]+", search_term or "")]
+    if not terms or not items:
+        return items
+
+    def words(item):
+        page = ((item.source_info or {}).get("source_page") or "").lower()
+        return {_stem(w) for w in re.findall(r"[a-z]+", page.rsplit("/video/", 1)[-1])}
+
+    scored = []
+    for index, item in enumerate(items):
+        slug = words(item)
+        subject_hit = terms[0] in slug
+        score = (2 if subject_hit else 0) + sum(t in slug for t in terms[1:])
+        scored.append((subject_hit, score, index, item))
+    if any(hit for hit, *_ in scored):
+        scored = [entry for entry in scored if entry[0]]
+    scored.sort(key=lambda entry: (-entry[1], entry[2]))
+    return [entry[3] for entry in scored]
+
+
 def search_videos_pexels(
     search_term: str,
     minimum_duration: int,
@@ -503,7 +540,7 @@ def search_videos_pexels(
                     },
                 }
                 video_items.append(item)
-        return video_items
+        return rank_by_slug_relevance(video_items, search_term)
     except Exception as e:
         logger.error(
             "pexels video search failed: "

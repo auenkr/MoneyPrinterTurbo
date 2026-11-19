@@ -62,3 +62,27 @@ class DuckingTest(unittest.TestCase):
         self.assertAlmostEqual(g[0], 2.5)
         self.assertAlmostEqual(g[2], 2.5)
         self.assertAlmostEqual(g[4], 2.5)
+
+
+class SlugRelevanceTest(unittest.TestCase):
+    def test_subject_results_first_and_offtopic_dropped(self):
+        from app.models.schema import MaterialInfo
+        from app.services.material import rank_by_slug_relevance
+
+        def item(slug):
+            m = MaterialInfo()
+            m.source_info = {"source_page": f"https://www.pexels.com/video/{slug}/"}
+            return m
+
+        items = [item("child-solving-a-puzzle-1"), item("octopus-in-aquarium-2"),
+                 item("octopus-solving-puzzles-3")]
+        ranked = rank_by_slug_relevance(items, "octopus solving puzzle")
+        self.assertEqual([i.source_info["source_page"][-3:-1] for i in ranked], ["-3", "-2"])
+
+    def test_keeps_all_when_no_subject_match(self):
+        from app.models.schema import MaterialInfo
+        from app.services.material import rank_by_slug_relevance
+
+        m = MaterialInfo()
+        m.source_info = {"source_page": "https://www.pexels.com/video/sea-1/"}
+        self.assertEqual(rank_by_slug_relevance([m], "octopus jar"), [m])

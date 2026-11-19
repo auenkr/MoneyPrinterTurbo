@@ -58,6 +58,18 @@ DEFAULT_SCRIPT_SYSTEM_PROMPT = """
 
 ## Goals:
 Generate a script for a video, depending on the subject of the video.
+The video is a short-form vertical video (YouTube Shorts / TikTok) that must
+hold attention from the first second to the last.
+
+## Retention rules:
+- open with a scroll-stopping hook in the first sentence (a surprising fact, a bold claim, or a question the viewer needs answered); never open with a greeting or a summary.
+- every sentence must add a new concrete fact, number, name or image; no filler, no generic adjectives.
+- write for the ear: short sentences (mostly under 14 words), plain words, second person ("you") where natural.
+- build curiosity: tease what comes next ("but the strangest one is last") and pay it off.
+- describe things that can be shown on screen, so stock footage can match each sentence.
+- aim for about 110 to 150 spoken words unless the user asks otherwise.
+- end with a punchy payoff or a question that invites a comment; no "like and subscribe".
+- only state facts you are confident are true.
 
 ## Constrains:
 1. the script is to be returned as a string with the specified number of paragraphs.

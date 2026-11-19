@@ -682,7 +682,10 @@ def generate_subtitle(task_id, params, video_script, sub_maker, audio_file):
         )
         return ""
 
-    is_word_level = getattr(params, "subtitle_display_mode", "sentence") == "word_by_word"
+    is_word_level = getattr(params, "subtitle_display_mode", "sentence") in (
+        "word_by_word",
+        "karaoke",
+    )
 
     # A failed retry must never reuse captions from an earlier narration.
     with staged_subtitle_file(final_subtitle_path) as subtitle_path:

@@ -1603,6 +1603,35 @@ def subtitle_font_supports_text(font_path: str, text: str) -> bool:
     return _subtitle_font_supports_sample(font_path, sample)
 
 
+_KARAOKE_POSITIONS = {"top": 0.18, "center": 0.5, "bottom": 0.78}
+
+
+def _build_karaoke_clips(cues, params, font_path, video_width, video_height, duration):
+    from app.services import karaoke
+
+    font_size = int(params.font_size)
+    position = params.subtitle_position
+    if position == "custom":
+        y_ratio = max(0.08, min(0.92, float(params.custom_position) / 100))
+    elif position in ("two_thirds_bottom", "two_thirds", "2/3_bottom"):
+        y_ratio = 1 / 3
+    else:
+        y_ratio = _KARAOKE_POSITIONS.get(position, 0.68)
+    style = karaoke.Style(
+        font_path=font_path,
+        font_size=font_size,
+        color=params.text_fore_color or "#FFFFFF",
+        highlight_color=getattr(params, "subtitle_highlight_color", None) or "#FFE600",
+        stroke_color=params.stroke_color or "#000000",
+        # Short-form captions need a heavy outline to stay readable on any footage.
+        stroke_width=max(int(params.stroke_width), font_size // 12),
+        max_width=int(video_width * 0.88),
+    )
+    return karaoke.build_clips(
+        cues, style, video_width, video_height, y_ratio=y_ratio, total_duration=duration
+    )
+
+
 def generate_video(
     video_path: str,
     audio_path: str,
@@ -1898,9 +1927,20 @@ def generate_video(
                 )
             )
             text_clips = []
-            for item in sub.subtitles:
-                clip = create_text_clip(subtitle_item=item)
-                text_clips.append(clip)
+            use_karaoke = getattr(
+                params, "subtitle_display_mode", "sentence"
+            ) == "karaoke" and not any(
+                subtitle_shaping.needs_shaping(text) for _, text in sub.subtitles
+            )
+            if use_karaoke:
+                text_clips = _build_karaoke_clips(
+                    sub.subtitles, params, font_path, video_width, video_height,
+                    video_clip.duration,
+                )
+            else:
+                for item in sub.subtitles:
+                    clip = create_text_clip(subtitle_item=item)
+                    text_clips.append(clip)
             video_clip = CompositeVideoClip([video_clip, *text_clips])
             clip_stack.callback(video_clip.close)
 

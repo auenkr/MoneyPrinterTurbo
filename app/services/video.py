@@ -1914,8 +1914,12 @@ def generate_video(
                 font_size=params.font_size,
             )
 
-        if params.subtitle_enabled and subtitle_path and os.path.exists(subtitle_path):
-            subtitles = moviepy_subtitles(subtitle_path)
+        subtitles = (
+            moviepy_subtitles(subtitle_path)
+            if params.subtitle_enabled and subtitle_path and os.path.exists(subtitle_path)
+            else []
+        )
+        if subtitles:
             shaped_font = subtitle_shaping.video_font(
                 font_path, (text for _, text in subtitles)
             )

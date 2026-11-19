@@ -130,7 +130,10 @@ def build_clips(cues, style: Style, video_width: int, video_height: int,
     ``y_ratio`` is the vertical centre of the caption as a fraction of height;
     0.68 keeps it above the Shorts UI overlay at the bottom of the screen.
     """
-    words = [Word(float(t[0]), float(t[1]), str(text)) for t, text in cues]
+    words = sorted(
+        (Word(float(t[0]), float(t[1]), str(text)) for t, text in cues),
+        key=lambda w: w.start,
+    )
     if not words:
         return []
     font = ImageFont.truetype(style.font_path, style.font_size)
@@ -152,6 +155,8 @@ def build_clips(cues, style: Style, video_width: int, video_height: int,
         for wi, word in enumerate(chunk):
             start = word.start
             end = chunk[wi + 1].start if wi + 1 < len(chunk) else chunk_end
+            if total_duration is not None:
+                end = min(end, total_duration)
             if end - start <= 0.01:
                 continue
             frame = _render_chunk(chunk, wi, style, font)

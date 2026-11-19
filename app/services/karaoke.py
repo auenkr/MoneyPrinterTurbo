@@ -44,8 +44,16 @@ def _is_wide(text: str) -> bool:
     return any(unicodedata.east_asian_width(ch) in ("W", "F") for ch in text)
 
 
-def _separator(words: list[Word]) -> str:
-    return "" if any(_is_wide(w.text) for w in words) else " "
+def _join_gap(a: str, b: str) -> str:
+    """No space between two CJK tokens; a space everywhere else."""
+    return "" if (_is_wide(a[-1:]) and _is_wide(b[:1])) else " "
+
+
+def _line(tokens: list[str]) -> str:
+    out = tokens[0] if tokens else ""
+    for prev, tok in zip(tokens, tokens[1:]):
+        out += _join_gap(prev, tok) + tok
+    return out
 
 
 def _display(text: str, style: Style) -> str:
@@ -64,10 +72,12 @@ def chunk_words(words: list[Word], style: Style, font: ImageFont.FreeTypeFont,
         if current:
             prev = current[-1]
             candidate = current + [word]
-            line = _separator(candidate).join(_display(w.text, style) for w in candidate)
+            line = _line([_display(w.text, style) for w in candidate])
+            # CJK cues are per character, so allow more of them per phrase.
+            limit = style.max_words * 3 if _is_wide(word.text) else style.max_words
             too_wide = font.getlength(line) + 2 * style.stroke_width > style.max_width
             boundary = (
-                len(current) >= style.max_words
+                len(current) >= limit
                 or too_wide
                 or word.start - prev.end > max_gap
                 or prev.text.rstrip().endswith(SENTENCE_END)
@@ -84,15 +94,20 @@ def chunk_words(words: list[Word], style: Style, font: ImageFont.FreeTypeFont,
 
 def _render_chunk(chunk: list[Word], active: int, style: Style,
                   font: ImageFont.FreeTypeFont) -> np.ndarray:
-    sep = _separator(chunk)
     tokens = [_display(w.text, style) for w in chunk]
+    # A single long word may still exceed the safe width: shrink to fit.
+    full = font.getlength(_line(tokens)) + 2 * style.stroke_width
+    if full > style.max_width:
+        size = max(12, int(style.font_size * style.max_width / full))
+        font = ImageFont.truetype(style.font_path, size)
     sw = style.stroke_width
-    space = font.getlength(sep) if sep else 0
+    gaps = [font.getlength(_join_gap(a, b)) if _join_gap(a, b) else 0
+            for a, b in zip(tokens, tokens[1:])] + [0]
     widths = [font.getlength(t) for t in tokens]
     ascent, descent = font.getmetrics()
     shadow = max(2, style.font_size // 18) if style.shadow else 0
     pad = sw + shadow + 4
-    width = int(sum(widths) + space * (len(tokens) - 1) + 2 * pad)
+    width = int(sum(widths) + sum(gaps) + 2 * pad)
     height = int(ascent + descent + 2 * pad)
     img = Image.new("RGBA", (max(width, 1), max(height, 1)), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -104,7 +119,7 @@ def _render_chunk(chunk: list[Word], active: int, style: Style,
                       fill=(0, 0, 0, 150), stroke_width=sw, stroke_fill=(0, 0, 0, 150))
         draw.text((x, pad), token, font=font, fill=fill,
                   stroke_width=sw, stroke_fill=style.stroke_color)
-        x += widths[i] + space
+        x += widths[i] + gaps[i]
     return np.array(img)
 
 
@@ -132,6 +147,8 @@ def build_clips(cues, style: Style, video_width: int, video_height: int,
             chunk_end = min(chunk_end, next_start)
         if total_duration is not None:
             chunk_end = min(chunk_end, total_duration)
+        # Never drop the last word because of overlapping cues.
+        chunk_end = max(chunk_end, chunk[-1].start + 0.1)
         for wi, word in enumerate(chunk):
             start = word.start
             end = chunk[wi + 1].start if wi + 1 < len(chunk) else chunk_end

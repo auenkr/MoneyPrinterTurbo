@@ -1931,6 +1931,8 @@ def generate_video(
                 params, "subtitle_display_mode", "sentence"
             ) == "karaoke" and not any(
                 subtitle_shaping.needs_shaping(text) for _, text in sub.subtitles
+            ) and subtitle_font_supports_text(
+                font_path, "".join(text for _, text in sub.subtitles)
             )
             if use_karaoke:
                 text_clips = _build_karaoke_clips(

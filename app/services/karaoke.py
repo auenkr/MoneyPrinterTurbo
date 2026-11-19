@@ -62,7 +62,7 @@ def _display(text: str, style: Style) -> str:
 
 
 def chunk_words(words: list[Word], style: Style, font: ImageFont.FreeTypeFont,
-                max_gap: float = 0.45) -> list[list[Word]]:
+                max_gap: float = 0.3) -> list[list[Word]]:
     """Group words into short on-screen phrases that fit on one line."""
     chunks: list[list[Word]] = []
     current: list[Word] = []

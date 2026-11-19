@@ -49,3 +49,16 @@ class KaraokeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DuckingTest(unittest.TestCase):
+    def test_gain_low_under_speech_high_in_pauses(self):
+        from app.services.video import speech_gain_envelope
+
+        gain = speech_gain_envelope([((1.0, 2.0), "a"), ((5.0, 6.0), "b")])
+        g = gain([0.0, 1.5, 3.5, 5.5, 9.0])
+        self.assertAlmostEqual(g[1], 1.0)
+        self.assertAlmostEqual(g[3], 1.0)
+        self.assertAlmostEqual(g[0], 2.5)
+        self.assertAlmostEqual(g[2], 2.5)
+        self.assertAlmostEqual(g[4], 2.5)

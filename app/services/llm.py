@@ -1064,7 +1064,12 @@ def generate_terms(
         )
         ordering_rule = (
             "6. keep the terms in the same order as the script narration; "
-            "earlier terms must describe earlier visual moments."
+            "earlier terms must describe earlier visual moments.\n"
+            "7. each term is a literal, filmable shot for that moment of narration "
+            "(concrete nouns a stock footage library would have, e.g. "
+            "\"anglerfish glowing lure\", \"mars planet surface\"); prefer the "
+            "specific thing being said over the general topic, and do not repeat "
+            "the same term twice in a row."
         )
         # 有序关键词模式下，示例数量要和 amount 保持一致，避免模型被固定
         # 的 4 个示例误导，导致长文案只返回少量关键词，影响素材覆盖度。
@@ -1093,7 +1098,7 @@ def generate_terms(
 
 ## Constrains:
 1. the search terms are to be returned as a json-array of strings.
-2. each search term should consist of 1-3 words, always add the main subject of the video.
+2. each search term should consist of 1-4 words; add the main subject of the video only when the term would be ambiguous without it.
 3. you must only return the json-array of strings. you must not return anything else. you must not return the script.
 4. the search terms must be related to the subject of the video.
 5. reply with english search terms only.

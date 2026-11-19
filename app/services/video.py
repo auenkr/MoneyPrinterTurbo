@@ -1603,6 +1603,46 @@ def subtitle_font_supports_text(font_path: str, text: str) -> bool:
     return _subtitle_font_supports_sample(font_path, sample)
 
 
+def speech_gain_envelope(cues, boost: float = 2.5, ramp: float = 0.3):
+    """Return gain(t) for background music: 1.0 under speech, `boost` in pauses.
+
+    The configured bgm_volume is the level under narration; music swells in
+    the intro, outro and pauses longer than ~0.6s, with linear ramps.
+    """
+    spans = sorted((float(a), float(b)) for (a, b), _ in cues)
+    merged: list[list[float]] = []
+    for a, b in spans:
+        if merged and a - merged[-1][1] < 0.6:
+            merged[-1][1] = max(merged[-1][1], b)
+        else:
+            merged.append([a, b])
+    starts = np.array([m[0] for m in merged])
+    ends = np.array([m[1] for m in merged])
+
+    def gain(t):
+        t = np.atleast_1d(np.asarray(t, dtype=float))
+        # distance outside the nearest speech span (0 inside a span)
+        before = starts[None, :] - t[:, None]
+        after = t[:, None] - ends[None, :]
+        dist = np.maximum(np.maximum(before, after), 0).min(axis=1)
+        return 1.0 + (boost - 1.0) * np.clip(dist / ramp, 0.0, 1.0)
+
+    return gain
+
+
+def _duck_under_speech(bgm_clip, cues):
+    if not cues:
+        return bgm_clip
+    gain = speech_gain_envelope(cues)
+
+    def transform(get_frame, t):
+        frame = get_frame(t)
+        g = gain(t)
+        return frame * (g[:, None] if np.ndim(frame) == 2 else g[0])
+
+    return bgm_clip.transform(transform, keep_duration=True)
+
+
 _KARAOKE_POSITIONS = {"top": 0.18, "center": 0.5, "bottom": 0.78}
 
 
@@ -1986,6 +2026,8 @@ def generate_video(
                 bgm_effects.append(afx.AudioFadeOut(3))
                 bgm_source_clip = clip_stack.enter_context(AudioFileClip(bgm_file))
                 bgm_clip = bgm_source_clip.with_effects(bgm_effects)
+                if subtitles:
+                    bgm_clip = _duck_under_speech(bgm_clip, subtitles)
                 audio_clip = CompositeAudioClip([audio_clip, bgm_clip])
             except Exception:
                 bgm_mix_succeeded = False

@@ -382,6 +382,14 @@ def generate_script(task_id, params):
     return video_script
 
 
+def _script_term_amount(video_script: str, clip_duration) -> int:
+    """One search term per clip-length beat of narration (~2.7 words/second)."""
+    words = len(utils.remove_pause_tags(video_script or "").split())
+    seconds = words / 2.7
+    per_clip = max(2.0, float(clip_duration or 3))
+    return max(8, min(24, round(seconds / per_clip)))
+
+
 def generate_terms(task_id, params, video_script):
     logger.info("\n\n## generating video terms")
     video_terms = params.video_terms
@@ -392,7 +400,11 @@ def generate_terms(task_id, params, video_script):
         video_terms = llm.generate_terms(
             video_subject=params.video_subject,
             video_script=utils.remove_pause_tags(video_script),
-            amount=8 if params.match_materials_to_script else 5,
+            amount=(
+                _script_term_amount(video_script, params.video_clip_duration)
+                if params.match_materials_to_script
+                else 5
+            ),
             match_script_order=params.match_materials_to_script,
         )
     else:

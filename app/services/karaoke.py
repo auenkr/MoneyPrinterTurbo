@@ -57,7 +57,8 @@ def _line(tokens: list[str]) -> str:
 
 
 def _display(text: str, style: Style) -> str:
-    text = text.strip()
+    # Punctuation drives phrasing but is noise on screen; keep ? and !.
+    text = text.strip().rstrip(".,;:。，；：") or text.strip()
     return text.upper() if style.uppercase else text
 
 

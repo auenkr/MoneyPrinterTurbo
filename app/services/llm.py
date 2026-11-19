@@ -1067,8 +1067,8 @@ def generate_terms(
             "earlier terms must describe earlier visual moments.\n"
             "7. each term is a literal, filmable shot for that moment of narration "
             "(concrete nouns a stock footage library would have, e.g. "
-            "\"anglerfish glowing lure\", \"mars planet surface\"); prefer the "
-            "specific thing being said over the general topic, and do not repeat "
+            "\"anglerfish glowing lure\", \"mars planet surface\"); the term must "
+            "show the main subject doing or near the specific thing being said, and do not repeat "
             "the same term twice in a row."
         )
         # 有序关键词模式下，示例数量要和 amount 保持一致，避免模型被固定
@@ -1098,7 +1098,7 @@ def generate_terms(
 
 ## Constrains:
 1. the search terms are to be returned as a json-array of strings.
-2. each search term should consist of 1-4 words; add the main subject of the video only when the term would be ambiguous without it.
+2. each search term should consist of 1-4 words and always include the main subject of the video, unless that sentence is clearly about something else (e.g. "octopus opening jar", not "opening jar").
 3. you must only return the json-array of strings. you must not return anything else. you must not return the script.
 4. the search terms must be related to the subject of the video.
 5. reply with english search terms only.
